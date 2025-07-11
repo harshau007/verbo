@@ -45,21 +45,3 @@ A Next.js 15 web application for practicing English and German speaking skills, 
     npm run dev
     ```
     Open [http://localhost:3000](http://localhost:3000) to view the application.
-
-## Deployment to Vercel
-
-1.  **Push your code to a Git repository** (e.g., GitHub, GitLab, Bitbucket).
-
-2.  **Import your project into Vercel:**
-
-    - Go to your Vercel dashboard.
-    - Click "Add New..." -> "Project".
-    - Select your Git repository.
-    - Vercel will automatically detect that it's a Next.js project and configure the build settings.
-
-3.  **Configure Environment Variables (Optional):**
-
-    - While the app is designed to take API keys from the client-side, for a more secure setup in a production environment, you might refactor the API routes to use environment variables. You can add these in your Vercel project settings.
-
-4.  **Deploy:**
-    - Click the "Deploy" button. Your application will be built and deployed. You'll be provided with a public URL.
