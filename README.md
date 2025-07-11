@@ -1,36 +1,65 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# CEFR Speaking Practice Tool
 
-## Getting Started
+A Next.js 15 web application for practicing English and German speaking skills, based on the CEFR framework.
 
-First, run the development server:
+## Features
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+- **Dashboard**: View past sessions and start new ones.
+- **Practice Sessions**: Record your voice, get an AI response, and interact with an avatar.
+- **AI-Powered**: Uses Gemini for speech-to-text and feedback, and ElevenLabs for text-to-speech.
+- **Review**: Get detailed feedback on your performance and CEFR level confirmation.
+- **Fully-Typed**: Built with TypeScript for a robust development experience.
+- **Modern UI**: Uses shadcn/ui and Tailwind CSS for a clean and responsive design.
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Tech Stack
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+- **Framework**: Next.js 15 (App Directory)
+- **Language**: TypeScript
+- **Styling**: Tailwind CSS
+- **UI Components**: shadcn/ui
+- **State Management**: Zustand
+- **Deployment**: Vercel
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Setup & Installation
 
-## Learn More
+1.  **Clone the repository:**
 
-To learn more about Next.js, take a look at the following resources:
+    ```bash
+    git clone [https://github.com/your-username/cefr-speaking-practice.git](https://github.com/your-username/cefr-speaking-practice.git)
+    cd cefr-speaking-practice
+    ```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+2.  **Install dependencies:**
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+    ```bash
+    npm install
+    ```
 
-## Deploy on Vercel
+3.  **Set up API Keys:**
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+    - Go to the `/settings` page in the application.
+    - Enter your API keys for Google Gemini and ElevenLabs. These are stored locally in your browser's `localStorage`.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+4.  **Run the development server:**
+    ```bash
+    npm run dev
+    ```
+    Open [http://localhost:3000](http://localhost:3000) to view the application.
+
+## Deployment to Vercel
+
+1.  **Push your code to a Git repository** (e.g., GitHub, GitLab, Bitbucket).
+
+2.  **Import your project into Vercel:**
+
+    - Go to your Vercel dashboard.
+    - Click "Add New..." -> "Project".
+    - Select your Git repository.
+    - Vercel will automatically detect that it's a Next.js project and configure the build settings.
+
+3.  **Configure Environment Variables (Optional):**
+
+    - While the app is designed to take API keys from the client-side, for a more secure setup in a production environment, you might refactor the API routes to use environment variables. You can add these in your Vercel project settings.
+
+4.  **Deploy:**
+    - Click the "Deploy" button. Your application will be built and deployed. You'll be provided with a public URL.
