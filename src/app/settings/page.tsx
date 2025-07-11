@@ -21,7 +21,7 @@ import { Input } from "@/components/ui/input";
 import { useApiKeys } from "@/lib/hooks/useApiKeys";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Terminal } from "lucide-react";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 
@@ -41,6 +41,14 @@ export default function SettingsPage() {
     },
   });
 
+  const [model, setModel] = useState(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("geminiModel") || "flash";
+    }
+    return "flash";
+  });
+  const [showTick, setShowTick] = useState(false);
+
   useEffect(() => {
     if (isLoaded) {
       form.reset(apiKeys);
@@ -49,7 +57,10 @@ export default function SettingsPage() {
 
   function onSubmit(values: z.infer<typeof formSchema>) {
     saveApiKeys(values);
+    localStorage.setItem("geminiModel", model);
     form.reset(values);
+    setShowTick(true);
+    setTimeout(() => setShowTick(false), 2000);
   }
 
   return (
@@ -100,7 +111,21 @@ export default function SettingsPage() {
                   </FormItem>
                 )}
               />
+              <div>
+                <label className="block text-sm font-medium mb-1">Gemini Model</label>
+                <select
+                  className="border rounded p-2 w-full"
+                  value={model}
+                  onChange={e => setModel(e.target.value)}
+                >
+                  <option value="flash">Gemini 2.5 Flash</option>
+                  <option value="pro">Gemini 2.5 Pro</option>
+                </select>
+              </div>
               <Button type="submit">Save Keys</Button>
+              {showTick && (
+                <span className="ml-4 text-green-600 font-bold">&#10003; Updated</span>
+              )}
             </form>
           </Form>
           <Alert className="mt-8">

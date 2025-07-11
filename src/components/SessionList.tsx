@@ -28,18 +28,19 @@ export function SessionList() {
             {Object.values(sessions).map((session) => (
               <li
                 key={session.id}
-                className="flex justify-between items-center p-2 border rounded"
+                className="flex flex-col sm:flex-row justify-between items-start sm:items-center p-2 border rounded"
               >
-                <span>
+                <span className="mb-2 sm:mb-0">
                   {session.name} ({session.language}, {session.cefrLevel})
                 </span>
-                <div className="space-x-2">
+                <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
                   <Link href={`/review/${session.id}`} passHref>
-                    <Button variant="outline">Review</Button>
+                    <Button variant="outline" className="w-full sm:w-auto">Review</Button>
                   </Link>
                   <Button
                     variant="destructive"
                     onClick={() => handleDelete(session.id)}
+                    className="w-full sm:w-auto"
                   >
                     Delete
                   </Button>

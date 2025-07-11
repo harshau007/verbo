@@ -5,10 +5,10 @@ import {
 } from "@google/generative-ai";
 import { type NextRequest, NextResponse } from "next/server";
 
-const initializeModel = (apiKey: string) => {
+const initializeModel = (apiKey: string, modelName: string = "flash") => {
   const genAI = new GoogleGenerativeAI(apiKey);
   return genAI.getGenerativeModel({
-    model: "gemini-1.5-flash",
+    model: modelName === "pro" ? "gemini-2.5-pro" : "gemini-2.5-flash",
     safetySettings: [
       {
         category: HarmCategory.HARM_CATEGORY_HARASSMENT,
@@ -22,75 +22,33 @@ const initializeModel = (apiKey: string) => {
   });
 };
 
-async function handleTranscribe(request: NextRequest) {
-  try {
-    const formData = await request.formData();
-    const audioBlob = formData.get("audio") as Blob | null;
-    const apiKey = formData.get("apiKey") as string | null;
-    const promptContext = formData.get("promptContext") as string | null;
-
-    if (!apiKey)
-      return NextResponse.json(
-        { error: "Gemini API key not provided" },
-        { status: 400 }
-      );
-    if (!audioBlob)
-      return NextResponse.json({ error: "No audio provided" }, { status: 400 });
-
-    const model = initializeModel(apiKey);
-    const audioBuffer = await audioBlob.arrayBuffer();
-    const audioBase64 = Buffer.from(audioBuffer).toString("base64");
-
-    const result = await model.generateContent([
-      {
-        text: `${
-          promptContext || "Please transcribe the following audio."
-        } The user's speech is in the audio file. Return only the transcribed text.`,
-      },
-      { inlineData: { mimeType: audioBlob.type, data: audioBase64 } },
-    ]);
-
-    const text = result.response.text();
-    return NextResponse.json({ text });
-  } catch (error: any) {
-    console.error("Error in Gemini transcription:", error);
-    return NextResponse.json(
-      { error: error.message || "Failed to process with Gemini" },
-      { status: 500 }
-    );
-  }
-}
-
 async function handleRespond(request: NextRequest) {
   try {
-    const { apiKey, transcript, sessionInfo } = await request.json();
+    const { apiKey, sessionInfo, model } = await request.json();
 
     if (!apiKey)
       return NextResponse.json(
         { error: "Gemini API key not provided" },
         { status: 400 }
       );
-    if (!transcript || !sessionInfo)
+    if (!sessionInfo)
       return NextResponse.json(
-        { error: "Transcript and session info are required" },
+        { error: "Session info is required" },
         { status: 400 }
       );
 
-    const model = initializeModel(apiKey);
+    const geminiModel = model || "flash";
+    const modelInstance = initializeModel(apiKey, geminiModel);
     const prompt = `
             You are an AI language tutor. A student is practicing ${
               sessionInfo.language
             } at a ${sessionInfo.cefrLevel} level.
             The topic of conversation is "${sessionInfo.topic}".
-            Here is the conversation so far:
-            ${transcript.map((t: any) => `${t.speaker}: ${t.text}`).join("\n")}
-
-            Your task is to provide a natural, engaging, and contextually relevant response to the user's last message.
-            Keep your response concise and appropriate for their CEFR level.
+            The user has just sent an audio message. Reply with a natural, engaging, and contextually relevant response for their CEFR level. Do not reference any transcript or previous conversation.
             Return ONLY your response text, with no additional text, markdown, or explanations.
         `;
 
-    const result = await model.generateContent(prompt);
+    const result = await modelInstance.generateContent(prompt);
     const text = result.response.text();
     return NextResponse.json({ text });
   } catch (error: any) {
@@ -104,43 +62,40 @@ async function handleRespond(request: NextRequest) {
 
 async function handleFeedback(request: NextRequest) {
   try {
-    const { apiKey, transcript, sessionInfo } = await request.json();
+    const { apiKey, sessionInfo, model } = await request.json();
 
     if (!apiKey)
       return NextResponse.json(
         { error: "Gemini API key not provided" },
         { status: 400 }
       );
-    if (!transcript || !sessionInfo)
+    if (!sessionInfo)
       return NextResponse.json(
-        { error: "Transcript and session info are required" },
+        { error: "Session info is required" },
         { status: 400 }
       );
 
-    const model = initializeModel(apiKey);
+    const geminiModel = model || "flash";
+    const modelInstance = initializeModel(apiKey, geminiModel);
     const prompt = `
-            You are an expert CEFR language examiner. A student has just completed a practice session.
+            You are an expert CEFR language examiner and IELTS examiner. A student has just completed a practice session.
             - Language: ${sessionInfo.language}
             - Stated CEFR Level: ${sessionInfo.cefrLevel}
             - Topic: ${sessionInfo.topic}
 
-            Here is the full transcript of their conversation:
-            ${transcript.map((t: any) => `${t.speaker}: ${t.text}`).join("\n")}
-
-            Your tasks are:
-            1.  Provide constructive feedback on the user's performance, focusing on grammar, vocabulary, pronunciation (based on the text), and fluency. Keep it encouraging.
-            2.  Confirm if their performance aligns with the stated ${
-              sessionInfo.cefrLevel
-            } level. You can suggest a higher or lower level if appropriate.
+            Provide constructive feedback on the user's performance, focusing on grammar, vocabulary, and fluency. Keep it encouraging. Since no transcript is available, base your feedback on the session info only.
+            Confirm if their performance aligns with the stated ${sessionInfo.cefrLevel} level. You can suggest a higher or lower level if appropriate.
+            Also, estimate the user's IELTS speaking band (e.g., 'Band 5', 'Band 6.5', etc.) based on the session info and your best judgment.
 
             Return the data in this exact JSON structure, with no additional text, markdown, or explanations:
             {
               "feedback": "Your detailed, constructive feedback here.",
-              "cefrConfirmation": "Your assessment of their CEFR level here (e.g., 'Your performance aligns well with B2 level.' or 'This performance is closer to an A2 level.')."
+              "cefrConfirmation": "Your assessment of their CEFR level here (e.g., 'Your performance aligns well with B2 level.' or 'This performance is closer to an A2 level.').",
+              "ieltsBand": "Your estimated IELTS speaking band here (e.g., 'Band 6.5')."
             }
         `;
 
-    const result = await model.generateContent(prompt);
+    const result = await modelInstance.generateContent(prompt);
     const rawText = result.response.text();
     const cleanedText = rawText
       .replace(/```json/g, "")
@@ -165,8 +120,6 @@ export async function POST(
   const route = (await params).route[0];
 
   switch (route) {
-    case "transcribe":
-      return handleTranscribe(request);
     case "respond":
       return handleRespond(request);
     case "feedback":

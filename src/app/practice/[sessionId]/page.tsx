@@ -13,7 +13,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 export default function PracticePage() {
   const router = useRouter();
   const { sessionId } = useParams() as { sessionId: string };
-  const { sessions, addTranscriptEntry } = useSessionStore();
+  const { sessions, updateSession } = useSessionStore();
   const { apiKeys, isLoaded } = useApiKeys();
 
   const [session, setSession] = useState<Session | null>(null);
@@ -21,6 +21,7 @@ export default function PracticePage() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [aiAudioUrl, setAiAudioUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [isLoadingFeedback, setIsLoadingFeedback] = useState(false);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -47,30 +48,17 @@ export default function PracticePage() {
           "promptContext",
           `The user is practicing ${session?.language} at ${session?.cefrLevel} on "${session?.topic}".`
         );
-        const tRes = await fetch("/api/gemini/transcribe", {
-          method: "POST",
-          body: form,
-        });
-        if (!tRes.ok) throw new Error(await tRes.text());
-        const { text: userText } = await tRes.json();
-        addTranscriptEntry(sessionId, { speaker: "user", text: userText });
-
-        const transcript = [
-          ...(session?.transcript || []),
-          { speaker: "user", text: userText },
-        ];
         const rRes = await fetch("/api/gemini/respond", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             apiKey: apiKeys.gemini,
-            transcript,
+            transcript: [{ speaker: "user", text: "User text not available" }],
             sessionInfo: session,
           }),
         });
         if (!rRes.ok) throw new Error(await rRes.text());
         const { text: aiText } = await rRes.json();
-        addTranscriptEntry(sessionId, { speaker: "ai", text: aiText });
 
         const ttsRes = await fetch("/api/elevenlabs", {
           method: "POST",
@@ -86,7 +74,7 @@ export default function PracticePage() {
         setIsProcessing(false);
       }
     },
-    [apiKeys, session, sessionId, addTranscriptEntry]
+    [apiKeys, session, sessionId]
   );
 
   const handleStartRecording = async () => {
@@ -120,9 +108,33 @@ export default function PracticePage() {
     }
   }, []);
 
-  const handleEndSession = () => {
-    handleStopRecording();
-    router.push(`/review/${sessionId}`);
+  const handleEndSession = async () => {
+    setIsLoadingFeedback(true);
+    try {
+      const response = await fetch("/api/gemini/feedback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          apiKey: apiKeys.gemini,
+          sessionInfo: session,
+        }),
+      });
+      if (!response.ok) {
+        setIsLoadingFeedback(false);
+        throw new Error("Failed to get feedback from AI");
+      }
+      const data = await response.json();
+      updateSession(sessionId, {
+        feedback: data.feedback,
+        cefrConfirmation: data.cefrConfirmation,
+        ieltsBand: data.ieltsBand, // Will add this to Session type next
+      });
+      setIsLoadingFeedback(false);
+      router.push(`/review/${sessionId}`);
+    } catch (err: any) {
+      setIsLoadingFeedback(false);
+      setError(err.message || "An unknown error occurred while generating feedback.");
+    }
   };
 
   if (!session)
@@ -136,112 +148,83 @@ export default function PracticePage() {
     session.cefrLevel === "A1" || session.cefrLevel === "A2" ? 0.75 : 1;
 
   return (
-    <div className="container mx-auto py-10">
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <div className="lg:col-span-1 space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Details</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p>
-                <strong>Language:</strong> {session.language}
-              </p>
-              <p>
-                <strong>Level:</strong> {session.cefrLevel}
-              </p>
-              <p>
-                <strong>Topic:</strong> {session.topic}
-              </p>
-            </CardContent>
-          </Card>
-          <div className="flex flex-col items-center p-4 space-y-4">
-            <Avatar
-              audioUrl={aiAudioUrl}
-              isProcessing={isProcessing}
-              playbackRate={rate}
-            />
-            <div className="flex space-x-2">
-              <Button
-                onClick={handleStartRecording}
-                disabled={isRecording || isProcessing}
-                size="lg"
-              >
-                <Mic className="mr-2 h-5 w-5" />
-                Start
-              </Button>
-              <Button
-                onClick={handleStopRecording}
-                disabled={!isRecording || isProcessing}
-                size="lg"
-                variant="secondary"
-              >
-                <MicOff className="mr-2 h-5 w-5" />
-                Stop
-              </Button>
-            </div>
-            <Button
-              onClick={handleEndSession}
-              variant="destructive"
-              className="w-full"
-            >
-              <Square className="mr-2 h-5 w-5" />
-              End Session
-            </Button>
-            {isRecording && (
-              <p className="text-sm text-green-400 animate-pulse">
-                Recording...
-              </p>
-            )}
+    <div className="flex flex-col items-center justify-center min-h-screen w-full">
+      <Card className="mb-8 w-full max-w-md">
+        <CardHeader>
+          <CardTitle>Details</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p>
+            <strong>Name:</strong> {session.name}
+          </p>
+          <p>
+            <strong>Language:</strong> {session.language}
+          </p>
+          <p>
+            <strong>Level:</strong> {session.cefrLevel}
+          </p>
+          <p>
+            <strong>Topic:</strong> {session.topic}
+          </p>
+        </CardContent>
+      </Card>
+      <div className="flex flex-col items-center space-y-4 w-full max-w-md">
+        <Avatar
+          audioUrl={aiAudioUrl}
+          isProcessing={isProcessing}
+          playbackRate={rate}
+        />
+        <div className="flex space-x-2 w-full">
+          <Button
+            onClick={handleStartRecording}
+            disabled={isRecording || isProcessing}
+            size="lg"
+            className="flex-1"
+          >
+            <Mic className="mr-2 h-5 w-5" />
+            Start
+          </Button>
+          <Button
+            onClick={handleStopRecording}
+            disabled={!isRecording || isProcessing}
+            size="lg"
+            variant="secondary"
+            className="flex-1"
+          >
+            <MicOff className="mr-2 h-5 w-5" />
+            Stop
+          </Button>
+        </div>
+        <Button
+          onClick={handleEndSession}
+          variant="destructive"
+          className="w-full"
+          disabled={isLoadingFeedback}
+        >
+          <Square className="mr-2 h-5 w-5" />
+          End Session
+        </Button>
+        {isRecording && (
+          <p className="text-sm text-green-400 animate-pulse">
+            Recording...
+          </p>
+        )}
+        {isLoadingFeedback && (
+          <div className="flex flex-col items-center justify-center w-full mt-4">
+            <Loader2 className="h-8 w-8 animate-spin mb-2" />
+            <p>Generating feedback and assessment...</p>
           </div>
-        </div>
-        <div className="lg:col-span-2">
-          <Card>
-            <CardHeader>
-              <CardTitle>Transcript</CardTitle>
-            </CardHeader>
-            <CardContent className="h-[60vh] overflow-y-auto space-y-4">
-              {session.transcript.length === 0 && (
-                <p className="text-muted-foreground">
-                  Conversation appears here.
-                </p>
-              )}
-              {session.transcript.map((entry, i) => (
-                <div
-                  key={i}
-                  className={`flex ${
-                    entry.speaker === "user" ? "justify-end" : "justify-start"
-                  }`}
-                >
-                  <div
-                    className={`rounded-lg p-3 max-w-md ${
-                      entry.speaker === "user"
-                        ? "bg-primary text-primary-foreground"
-                        : "bg-muted"
-                    }`}
-                  >
-                    <p className="font-bold capitalize">{entry.speaker}</p>
-                    <p>{entry.text}</p>
-                  </div>
-                </div>
-              ))}
-              {isProcessing && (
-                <div className="flex justify-start">
-                  <div className="rounded-lg p-3 max-w-md bg-muted">
-                    <Loader2 className="h-5 w-5 animate-spin" />
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-          {error && (
-            <Alert variant="destructive" className="mt-4">
-              <AlertCircle className="h-4 w-4" />
-              <AlertTitle>Error</AlertTitle>
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
-          )}
-        </div>
+        )}
+        <p className="text-sm text-gray-500">
+          Your audio will be sent directly to the AI for a response.
+        </p>
+        {error && (
+          <Alert variant="destructive" className="mt-4 w-full">
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle>Error</AlertTitle>
+            <AlertDescription className="text-wrap">{error}</AlertDescription>
+          </Alert>
+        )}
       </div>
     </div>
   );

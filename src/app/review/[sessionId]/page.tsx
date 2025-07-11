@@ -43,33 +43,11 @@ function FeedbackDisplay({ session }: { session: Session }) {
           <p className="text-lg font-semibold">
             {session.cefrConfirmation || "Level could not be confirmed."}
           </p>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Full Transcript</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {session.transcript.map((entry, index) => (
-            <div
-              key={index}
-              className={`flex ${
-                entry.speaker === "user" ? "justify-end" : "justify-start"
-              }`}
-            >
-              <div
-                className={`rounded-lg p-3 max-w-xl ${
-                  entry.speaker === "user"
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-muted"
-                }`}
-              >
-                <p className="font-bold capitalize">{entry.speaker}</p>
-                <p>{entry.text}</p>
-              </div>
-            </div>
-          ))}
+          {session.ieltsBand && (
+            <p className="text-lg font-semibold mt-4 text-blue-600">
+              IELTS Band: {session.ieltsBand}
+            </p>
+          )}
         </CardContent>
       </Card>
     </div>
@@ -94,7 +72,6 @@ export default function ReviewPage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             apiKey: apiKeys.gemini,
-            transcript: session.transcript,
             sessionInfo: {
               language: session.language,
               cefrLevel: session.cefrLevel,
@@ -137,33 +114,39 @@ export default function ReviewPage() {
   }
 
   return (
-    <div className="container mx-auto py-10">
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-3xl font-bold">Session Review</h1>
-        <Link href="/" passHref>
-          <Button>Back to Dashboard</Button>
-        </Link>
+    <div className="flex flex-col items-center justify-center min-h-screen w-full">
+      <div className="w-full max-w-xl space-y-8">
+        <Card>
+          <CardHeader>
+            <CardTitle>AI-Generated Feedback</CardTitle>
+            <CardDescription>
+              An analysis of your performance in this session.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="prose dark:prose-invert">
+            {session.feedback ? (
+              <p>{session.feedback}</p>
+            ) : (
+              <p>No feedback was generated for this session.</p>
+            )}
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>CEFR Level Confirmation</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-lg font-semibold">
+              {session.cefrConfirmation || "Level could not be confirmed."}
+            </p>
+            {session.ieltsBand && (
+              <p className="text-lg font-semibold mt-4 text-blue-600">
+                IELTS Band: {session.ieltsBand}
+              </p>
+            )}
+          </CardContent>
+        </Card>
       </div>
-
-      {isLoading && (
-        <div className="flex flex-col items-center justify-center text-center p-8 border rounded-lg">
-          <Loader2 className="h-8 w-8 animate-spin mb-4" />
-          <p className="text-lg">
-            Our AI is analyzing your session and generating feedback...
-          </p>
-          <p className="text-muted-foreground">This may take a moment.</p>
-        </div>
-      )}
-
-      {error && (
-        <Alert variant="destructive" className="mb-4">
-          <AlertCircle className="h-4 w-4" />
-          <AlertTitle>Feedback Generation Failed</AlertTitle>
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      )}
-
-      {!isLoading && <FeedbackDisplay session={session} />}
     </div>
   );
 }
