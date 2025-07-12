@@ -3,7 +3,7 @@
 import { Avatar } from "@/components/Avatar";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { useApiKeys } from "@/lib/hooks/useApiKeys";
 import { Session, useSessionStore } from "@/lib/store/useSessionStore";
 import { AlertCircle, Loader2, Mic, MicOff, Square } from "lucide-react";
@@ -13,7 +13,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 export default function PracticePage() {
   const router = useRouter();
   const { sessionId } = useParams() as { sessionId: string };
-  const { sessions, updateSession } = useSessionStore();
+  const { sessions, updateSession, addTranscriptEntry, ensureTranscript } = useSessionStore();
   const { apiKeys, isLoaded } = useApiKeys();
 
   const [session, setSession] = useState<Session | null>(null);
@@ -22,6 +22,9 @@ export default function PracticePage() {
   const [aiAudioUrl, setAiAudioUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoadingFeedback, setIsLoadingFeedback] = useState(false);
+  const [part2Topic, setPart2Topic] = useState<string>("");
+  const [isPart2Preparation, setIsPart2Preparation] = useState(false);
+  const [preparationTime, setPreparationTime] = useState<number>(60);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -29,8 +32,42 @@ export default function PracticePage() {
 
   useEffect(() => {
     const current = sessions[sessionId];
-    if (current) setSession(current);
-  }, [sessions, sessionId]);
+    if (current) {
+      if (!current.transcript) {
+        ensureTranscript(sessionId);
+      }
+      setSession(current);
+    }
+  }, [sessions, sessionId, ensureTranscript]);
+
+  useEffect(() => {
+    if (session?.currentPart === "part2" && !session.part2Topic) {
+      generatePart2Topic();
+    }
+  }, [session?.currentPart, session?.part2Topic]);
+
+  const generatePart2Topic = async () => {
+    if (!apiKeys.gemini) return;
+    
+    try {
+      const response = await fetch("/api/gemini/generate-topic", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          apiKey: apiKeys.gemini,
+          sessionInfo: session,
+        }),
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        setPart2Topic(data.topic);
+        updateSession(sessionId, { part2Topic: data.topic });
+      }
+    } catch (error) {
+      console.error("Failed to generate Part 2 topic:", error);
+    }
+  };
 
   const processAudio = useCallback(
     async (blob: Blob) => {
@@ -44,26 +81,26 @@ export default function PracticePage() {
         const form = new FormData();
         form.append("audio", blob);
         form.append("apiKey", apiKeys.gemini);
-        form.append(
-          "promptContext",
-          `The user is practicing ${session?.language} at ${session?.cefrLevel} on "${session?.topic}".`
-        );
+        form.append("sessionInfo", JSON.stringify(session));
+        form.append("currentPart", session?.currentPart || "part1");
+        form.append("model", "flash");
+        
         const rRes = await fetch("/api/gemini/respond", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            apiKey: apiKeys.gemini,
-            transcript: [{ speaker: "user", text: "User text not available" }],
-            sessionInfo: session,
-          }),
+          body: form,
         });
         if (!rRes.ok) throw new Error(await rRes.text());
-        const { text: aiText } = await rRes.json();
+        const data = await rRes.json();
+        console.log(data);
+        const { response, transcript, part } = data;
+        console.log(response, transcript);
+        addTranscriptEntry(sessionId, { speaker: "user", text: transcript, part: part });
+        addTranscriptEntry(sessionId, { speaker: "ai", text: response, part: part });
 
         const ttsRes = await fetch("/api/elevenlabs", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text: aiText, apiKey: apiKeys.elevenlabs }),
+          body: JSON.stringify({ text: response, apiKey: apiKeys.elevenlabs }),
         });
         if (!ttsRes.ok) throw new Error(await ttsRes.text());
         const blobResp = await ttsRes.blob();
@@ -74,8 +111,35 @@ export default function PracticePage() {
         setIsProcessing(false);
       }
     },
-    [apiKeys, session, sessionId]
+    [apiKeys, session, sessionId, addTranscriptEntry]
   );
+
+  const moveToNextPart = () => {
+    if (!session) return;
+    
+    const nextPart = session.currentPart === "part1" ? "part2" : 
+                    session.currentPart === "part2" ? "part3" : null;
+    
+    if (nextPart) {
+      updateSession(sessionId, { currentPart: nextPart });
+      setAiAudioUrl(null);
+      
+      if (nextPart === "part2") {
+        setIsPart2Preparation(true);
+        setPreparationTime(60);
+        const timer = setInterval(() => {
+          setPreparationTime((prev) => {
+            if (prev <= 1) {
+              clearInterval(timer);
+              setIsPart2Preparation(false);
+              return 0;
+            }
+            return prev - 1;
+          });
+        }, 1000);
+      }
+    }
+  };
 
   const handleStartRecording = async () => {
     if (!isLoaded || !apiKeys.gemini || !apiKeys.elevenlabs) {
@@ -117,6 +181,7 @@ export default function PracticePage() {
         body: JSON.stringify({
           apiKey: apiKeys.gemini,
           sessionInfo: session,
+          transcript: session?.transcript || [],
         }),
       });
       if (!response.ok) {
@@ -127,7 +192,7 @@ export default function PracticePage() {
       updateSession(sessionId, {
         feedback: data.feedback,
         cefrConfirmation: data.cefrConfirmation,
-        ieltsBand: data.ieltsBand, // Will add this to Session type next
+        ieltsBand: data.ieltsBand,
       });
       setIsLoadingFeedback(false);
       router.push(`/review/${sessionId}`);
@@ -147,11 +212,30 @@ export default function PracticePage() {
   const rate =
     session.cefrLevel === "A1" || session.cefrLevel === "A2" ? 0.75 : 1;
 
+  const getPartTitle = (part: string) => {
+    switch (part) {
+      case "part1": return "Part 1: Introduction and Interview";
+      case "part2": return "Part 2: Individual Long Turn";
+      case "part3": return "Part 3: Two-Way Discussion";
+      default: return "IELTS Speaking Test";
+    }
+  };
+
+  const getPartDescription = (part: string) => {
+    switch (part) {
+      case "part1": return "General questions about familiar topics (4-5 minutes)";
+      case "part2": return "Speak for 1-2 minutes on a given topic";
+      case "part3": return "In-depth discussion on abstract topics (4-5 minutes)";
+      default: return "";
+    }
+  };
+
   return (
     <div className="flex flex-col items-center justify-center min-h-screen w-full">
       <Card className="mb-8 w-full max-w-md">
         <CardHeader>
-          <CardTitle>Details</CardTitle>
+          <CardTitle>{getPartTitle(session.currentPart || "part1")}</CardTitle>
+          <CardDescription>{getPartDescription(session.currentPart || "part1")}</CardDescription>
         </CardHeader>
         <CardContent>
           <p>
@@ -163,47 +247,93 @@ export default function PracticePage() {
           <p>
             <strong>Level:</strong> {session.cefrLevel}
           </p>
-          <p>
-            <strong>Topic:</strong> {session.topic}
-          </p>
+          {session.currentPart === "part2" && session.part2Topic && (
+            <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-950 rounded-lg">
+              <p className="font-semibold">Topic:</p>
+              <p>{session.part2Topic}</p>
+            </div>
+          )}
         </CardContent>
       </Card>
+
+      {session.currentPart === "part2" && isPart2Preparation && (
+        <Card className="mb-8 w-full max-w-md">
+          <CardHeader>
+            <CardTitle>Preparation Time</CardTitle>
+            <CardDescription>You have 1 minute to prepare your response</CardDescription>
+          </CardHeader>
+          <CardContent className="text-center">
+            <div className="text-4xl font-bold text-blue-600">{preparationTime}s</div>
+            <p className="mt-2 text-sm text-gray-600">Think about what you want to say</p>
+          </CardContent>
+        </Card>
+      )}
+
       <div className="flex flex-col items-center space-y-4 w-full max-w-md">
         <Avatar
           audioUrl={aiAudioUrl}
           isProcessing={isProcessing}
           playbackRate={rate}
         />
-        <div className="flex space-x-2 w-full">
+        
+        {session.currentPart !== "part2" || !isPart2Preparation ? (
+          <div className="flex space-x-2 w-full">
+            <Button
+              onClick={handleStartRecording}
+              disabled={isRecording || isProcessing}
+              size="lg"
+              className="flex-1"
+            >
+              <Mic className="mr-2 h-5 w-5" />
+              Start
+            </Button>
+            <Button
+              onClick={handleStopRecording}
+              disabled={!isRecording || isProcessing}
+              size="lg"
+              variant="secondary"
+              className="flex-1"
+            >
+              <MicOff className="mr-2 h-5 w-5" />
+              Stop
+            </Button>
+          </div>
+        ) : null}
+
+        {session.currentPart === "part1" && (
           <Button
-            onClick={handleStartRecording}
-            disabled={isRecording || isProcessing}
-            size="lg"
-            className="flex-1"
+            onClick={moveToNextPart}
+            variant="outline"
+            className="w-full"
+            disabled={isProcessing}
           >
-            <Mic className="mr-2 h-5 w-5" />
-            Start
+            Move to Part 2
           </Button>
+        )}
+
+        {session.currentPart === "part2" && !isPart2Preparation && (
           <Button
-            onClick={handleStopRecording}
-            disabled={!isRecording || isProcessing}
-            size="lg"
-            variant="secondary"
-            className="flex-1"
+            onClick={moveToNextPart}
+            variant="outline"
+            className="w-full"
+            disabled={isProcessing}
           >
-            <MicOff className="mr-2 h-5 w-5" />
-            Stop
+            Move to Part 3
           </Button>
-        </div>
-        <Button
-          onClick={handleEndSession}
-          variant="destructive"
-          className="w-full"
-          disabled={isLoadingFeedback}
-        >
-          <Square className="mr-2 h-5 w-5" />
-          End Session
-        </Button>
+        )}
+
+        {session.currentPart === "part3" && (
+          <Button
+            onClick={handleEndSession}
+            variant="destructive"
+            className="w-full"
+            disabled={isLoadingFeedback}
+          >
+            <Square className="mr-2 h-5 w-5" />
+            End Session
+          </Button>
+        )}
+
         {isRecording && (
           <p className="text-sm text-green-400 animate-pulse">
             Recording...

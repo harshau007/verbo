@@ -65,6 +65,8 @@ export function SessionSetup({ onSessionStart }: SessionSetupProps) {
       cefrLevel: values.cefrLevel,
       name: values.name,
       topic: values.topic,
+      transcript: [],
+      currentPart: "part1",
       createdAt: new Date().toISOString(),
     });
     onSessionStart();
